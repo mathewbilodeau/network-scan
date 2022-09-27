@@ -4,17 +4,6 @@ import ipaddress
 import sys
 
 
-class Network:
-    network_devices = []
-
-    def __init__(self, network_address: ipaddress, netmask: ipaddress, broadcast_address: ipaddress,
-                 gateway: ipaddress):
-        self.network_address = network_address
-        self.netmask = netmask
-        self.broadcast_address = broadcast_address
-        self.gateway = gateway
-
-
 class NetworkDevice:
     def __init__(self, hostname: str, ip_address: ipaddress, mac_address: str):
         self.hostname = hostname
@@ -63,7 +52,7 @@ def net_scan():
         print("Unsupported platform... exiting")
         sys.exit()
 
-    print("Performing additional processing...")
+    print("Performing additional processing...\n")
 
     cidr_suffix = 0
     octets = netmask.split(".")
@@ -86,7 +75,13 @@ def net_scan():
     print("Netmask is: " + netmask)
     print("The number of usable addresses on the network is: " + str(total_number_of_addresses))
     print("The network address is: " + str(network.network_address))
-    print("Broadcast address is " + str(broadcast_address))
+    print("Broadcast address is " + str(broadcast_address) + "\n")
+
+    print("Finding host IP address range...")
+
+
+
+
 
 
 net_scan()
