@@ -3,6 +3,8 @@ import socket
 import ipaddress
 import sys
 
+from uuid import getnode
+
 
 class NetworkDevice:
     def __init__(self, hostname: str, ip_address: ipaddress, mac_address: str):
@@ -11,49 +13,72 @@ class NetworkDevice:
         self.mac_address = mac_address
 
 
-def linux_discovery():
-    print("Checking ifconfig...")
+def get_netmask_linux():
+    print("Checking ifconfig for netmask...")
 
     # To obtain the netmask, we will run the ifconfig command and extract it from the output.
     process = subprocess.Popen("ifconfig", stdout=subprocess.PIPE)
     output = str(process.communicate()).replace("\\n", "")
 
-    # The host IP begins immediately following "inet " (important to note the space)
+    # The netmask begins immediately following "netmask " (important to note the space)
     # and immediately before the next space (" "). First we split the whole output at
-    # "inet ". This creates a list with two string elements. The particular string we're
-    # interested in is the second element, as this contains the host IP. However, we need
+    # "netmask ". This creates a list with two string elements. The particular string we're
+    # interested in is the second element, as this contains the netmask. However, we need
     # to dis-join the host IP from the remainder of the string, so we also split this list
-    # into another list of two elements at the first " ". We can then assign our host_ip_address
+    # into another list of two elements at the first " ". We can then assign our netmask
     # variable to the first element of the resulting list.
-    host_ip_address = ipaddress.ip_address(output.split("inet ")[1].split(" ")[0])
-
-    # We can repeat this process three more times to obtain the host MAC address, netmask, and
-    # broadcast address of the network.
-    host_mac_address = output.split("ether ")[1].split(" ")[0]
     netmask = output.split("netmask ")[1].split(" ")[0]
-    broadcast_address = ipaddress.ip_address(output.split("broadcast ")[1].split(" ")[0])
+    return netmask
 
-    return host_ip_address, host_mac_address, netmask, broadcast_address
+
+def get_netmask_windows():
+    print("Checking ipconfig for netmask...")
+
+    # To obtain the netmask, we will run the ipconfig command and extract it from the output.
+    process = subprocess.Popen("ipconfig", stdout=subprocess.PIPE)
+    output = str(process.communicate()).replace("\\n", "")
+
+    # The netmask begins immediately following "netmask " (important to note the space)
+    # and immediately before the next space (" "). First we split the whole output at
+    # "netmask ". This creates a list with two string elements. The particular string we're
+    # interested in is the second element, as this contains the netmask. However, we need
+    # to dis-join the host IP from the remainder of the string, so we also split this list
+    # into another list of two elements at the first " ". We can then assign our netmask
+    # variable to the first element of the resulting list.
+    netmask = output.split("netmask ")[1].split(" ")[0]
+    return netmask
 
 
 def net_scan():
-    print("Initial discovery...")
+    network_devices = []
 
+    print("Getting host information...")
     hostname = socket.gethostname()
-    print("Hostname is: " + hostname)
+    host_ip_address = socket.gethostbyname(hostname + ".local")
+    host_mac_address = str(hex(getnode())).strip("0x")
 
+    print("Hostname is: " + hostname)
+    print("Host IP address is: " + host_ip_address)
+    print("Host MAC address is: " + host_mac_address)
+
+    print("Storing host information...\n")
+    host = NetworkDevice(hostname, host_ip_address, host_mac_address)
+    network_devices.append(host)
+
+    print("Initial discovery...")
     if sys.platform == "win32":
         print("Windows based host...")
-        pass
-    elif sys.platform == "linux" or sys.platform == "linux2":
+        netmask = get_netmask_windows()
+    if sys.platform == "linux" or sys.platform == "linux2":
         print("Linux based host...")
-        host_ip_address, host_mac_address, netmask, broadcast_address = linux_discovery()
+        netmask = get_netmask_linux()
     else:
         print("Unsupported platform... exiting")
         sys.exit()
 
-    print("Performing additional processing...\n")
+    print("Netmask is: " + netmask + "\n")
 
+    print("Extrapolating additional information...")
     cidr_suffix = 0
     octets = netmask.split(".")
     for octet in octets:
@@ -66,22 +91,31 @@ def net_scan():
         # clarity, so this has to be stripped off when the conversion from binary to string is made.
         cidr_suffix += len(str(bin(int(octet))).strip("0b"))
 
-    total_number_of_addresses = 2 ** (32 - cidr_suffix) - 2
+    number_of_host_addresses = 2 ** (32 - cidr_suffix) - 2
+    print("Number of host addresses is: " + str(number_of_host_addresses))
 
     network = ipaddress.ip_network((host_ip_address, cidr_suffix), strict=False)
+    print("Network address is: " + str(network.network_address))
 
-    print("Host IP address is: " + str(host_ip_address))
-    print("Host MAC address is: " + host_mac_address)
-    print("Netmask is: " + netmask)
-    print("The number of usable addresses on the network is: " + str(total_number_of_addresses))
-    print("The network address is: " + str(network.network_address))
-    print("Broadcast address is " + str(broadcast_address) + "\n")
+    all_host_addresses = list(network.hosts())
+    print("First usable address is: " + str(all_host_addresses[0]))
+    print("Last usable address is: " + str(all_host_addresses[number_of_host_addresses - 1]))
 
-    print("Finding host IP address range...")
+    print("Broadcast address is: " + str(network.broadcast_address) + "\n")
 
+    print("Pinging all addresses to populate ARP table...")
+    for address in all_host_addresses:
+        subprocess.Popen(["ping", "-c", "1", str(address)], stdout=subprocess.PIPE)
 
-
-
+    print("Checking ARP table...")
+    process = subprocess.Popen(["arp", "-a"], stdout=subprocess.PIPE)
+    output = str(process.communicate())
+    table_entries = output.split("\\n")
+    for entry in table_entries:
+        if "<incomplete>" in entry:
+            table_entries.remove(entry)
+        else:
+            print(entry)
 
 
 net_scan()
