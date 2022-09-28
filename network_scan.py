@@ -1,8 +1,8 @@
-import subprocess
-import socket
 import ipaddress
+import re
+import socket
+import subprocess
 import sys
-
 from uuid import getnode
 
 
@@ -53,16 +53,16 @@ def net_scan():
     network_devices = []
 
     print("Getting host information...")
-    hostname = socket.gethostname()
-    host_ip_address = socket.gethostbyname(hostname + ".local")
+    this_hostname = socket.gethostname()
+    host_ip_address = socket.gethostbyname(this_hostname + ".local")
     host_mac_address = str(hex(getnode())).strip("0x")
 
-    print("Hostname is: " + hostname)
+    print("Hostname is: " + this_hostname)
     print("Host IP address is: " + host_ip_address)
     print("Host MAC address is: " + host_mac_address)
 
     print("Storing host information...\n")
-    host = NetworkDevice(hostname, host_ip_address, host_mac_address)
+    host = NetworkDevice(this_hostname, host_ip_address, host_mac_address)
     network_devices.append(host)
 
     print("Initial discovery...")
@@ -105,17 +105,47 @@ def net_scan():
 
     print("Pinging all addresses to populate ARP table...")
     for address in all_host_addresses:
-        subprocess.Popen(["ping", "-c", "1", str(address)], stdout=subprocess.PIPE)
+        subprocess.Popen(["ping", "-c", "4", str(address)], stdout=subprocess.PIPE)
 
-    print("Checking ARP table...")
-    process = subprocess.Popen(["arp", "-a"], stdout=subprocess.PIPE)
+    print("Loading regular expressions...")
+    re_ipv4 = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+    re_mac = re.compile(r"(?:[0-9a-fA-F]:?){12}")
+
+    print("Checking the ARP table...")
+    process = subprocess.Popen(["arp"], stdout=subprocess.PIPE)
     output = str(process.communicate())
     table_entries = output.split("\\n")
     for entry in table_entries:
-        if "<incomplete>" in entry:
-            table_entries.remove(entry)
-        else:
-            print(entry)
+        if "ether" in entry:
+
+            ip_address = ""
+            mac_address = ""
+
+            try:
+                ip_address = ipaddress.ip_address(re_ipv4.findall(entry)[0])
+            except IndexError:
+                pass
+
+            try:
+                mac_address = re_mac.findall(entry)[0].replace(":", "")
+            except IndexError:
+                pass
+
+            if ip_address and mac_address:
+                try:
+                    _, hostname, _ = socket.gethostbyaddr(str(ip_address))
+                except socket.herror:
+                    hostname = "unknown"
+
+                print("Found host " + hostname + " at IP address " + str(ip_address) + " with MAC address " + mac_address)
+                device = NetworkDevice(hostname, ip_address, mac_address)
+                network_devices.append(device)
+
+
+
+
+
+
 
 
 net_scan()
