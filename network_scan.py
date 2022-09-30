@@ -5,147 +5,152 @@ import subprocess
 import sys
 from uuid import getnode
 
+import mac_vendor_lookup
+
 
 class NetworkDevice:
-    def __init__(self, hostname: str, ip_address: ipaddress, mac_address: str):
-        self.hostname = hostname
+    def __init__(self, ip_address: ipaddress, mac_address, hostname="could not be found", vendor="unknown"):
         self.ip_address = ip_address
         self.mac_address = mac_address
+        self.hostname = hostname
+        self.vendor = vendor
 
 
-def get_netmask_linux():
-    print("Checking ifconfig for netmask...")
+def get_host_device():
+    hostname = socket.gethostname()
+    ip_address = socket.gethostbyname(hostname + ".local")
+    mac_address = str(hex(getnode())).strip("0x")
+    return NetworkDevice(ip_address, mac_address, hostname)
 
+
+def get_netmask_in_linux():
     # To obtain the netmask, we will run the ifconfig command and extract it from the output.
     process = subprocess.Popen("ifconfig", stdout=subprocess.PIPE)
     output = str(process.communicate()).replace("\\n", "")
 
-    # The netmask begins immediately following "netmask " (important to note the space)
-    # and immediately before the next space (" "). First we split the whole output at
-    # "netmask ". This creates a list with two string elements. The particular string we're
-    # interested in is the second element, as this contains the netmask. However, we need
-    # to dis-join the host IP from the remainder of the string, so we also split this list
-    # into another list of two elements at the first " ". We can then assign our netmask
-    # variable to the first element of the resulting list.
+    # The netmask begins immediately following "netmask " (important to note the space) and immediately before the next
+    # space (" "). First we split the whole output at "netmask ". This creates a list with two string elements. The
+    # particular string we're interested in is the second element, as this contains the netmask. However, we need to
+    # dis-join the host IP from the remainder of the string, so we also split this list into another list of two
+    # elements at the first " ". We can then assign our netmask variable to the first element of the resulting list.
     netmask = output.split("netmask ")[1].split(" ")[0]
     return netmask
 
 
-def get_netmask_windows():
-    print("Checking ipconfig for netmask...")
-
+def get_netmask_in_windows():
     # To obtain the netmask, we will run the ipconfig command and extract it from the output.
     process = subprocess.Popen("ipconfig", stdout=subprocess.PIPE)
     output = str(process.communicate()).replace("\\n", "")
-
-    # The netmask begins immediately following "netmask " (important to note the space)
-    # and immediately before the next space (" "). First we split the whole output at
-    # "netmask ". This creates a list with two string elements. The particular string we're
-    # interested in is the second element, as this contains the netmask. However, we need
-    # to dis-join the host IP from the remainder of the string, so we also split this list
-    # into another list of two elements at the first " ". We can then assign our netmask
-    # variable to the first element of the resulting list.
     netmask = output.split("netmask ")[1].split(" ")[0]
     return netmask
 
 
-def net_scan():
-    network_devices = []
+def determine_netmask_suffix(netmask: str):
+    netmask_suffix = 0  # Count up number of bits starting at 0
+    octets = netmask.split(".")
+    for octet in octets:
+        # We need to determine the number of bits that have a value of 1 in our IP address. We currently have a list of
+        # strings representing each octet, eg ["255", "255", "192", "0"]. We can easily convert each string to an
+        # integer, and each integer to binary using built in Python methods. Then, we can convert the binary
+        # representation back to a string and find the length of the string. Since a netmask is guaranteed to be an
+        # uninterrupted sequence of 1s, we can add the lengths of each string together to compute the netmask suffix.
+        # When Python converts binary numbers to strings, it appends "0b" to the front for clarity, so this has to be
+        # stripped off when the conversion from binary to string is made.
+        netmask_suffix += len(str(bin(int(octet))).strip("0b"))
+    return netmask_suffix
 
+
+def ping_ip_addresses(list_of_ip_addresses: list):
+    for ip_address in list_of_ip_addresses:
+        subprocess.Popen(["ping", "-c", "1", str(ip_address)], stdout=subprocess.PIPE)
+
+
+def get_hosts_in_arp_table():
+    # List of all hosts in ARP table
+    hosts = []
+
+    # We'll use regular expressions to filter the IP and mac addresses out of the ARP table. Important to note that in
+    # Windows, the arp command formats mac addresses with a "-" separating each group, whereas in Linux they are
+    # formatted with a ":". This regular expression accounts for that with "[:|-]".
+    re_ipv4 = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+    re_mac = re.compile(r"(?:[0-9a-fA-F][:|-]?){12}")
+
+    # Run ARP command - this method is cross-platform due to similarities between Windows and Linux arp command.
+    process = subprocess.Popen("arp", stdout=subprocess.PIPE)
+    table_entries = str(process.communicate()).split("\\n")  # Isolate ARP table entries by splitting at new line
+
+    # Check all entries in table for IP and mac addresses.
+    for entry in table_entries:
+        try:
+            ip_address = ipaddress.ip_address(re_ipv4.findall(entry)[0])
+            mac_address = re_mac.findall(entry)[0].replace(":", "").replace("-", "")  # Filter : and - from address
+            hosts.append(NetworkDevice(ip_address, mac_address))
+        except IndexError:  # Index error occurs if regular expression did not find IP or mac address
+            pass
+
+    return hosts
+
+
+def network_scan():
+    print("Updating MAC address OUI database...\n")
+    mac = mac_vendor_lookup.MacLookup()
+    mac.update_vendors()
+
+    # Get host information
     print("Getting host information...")
-    this_hostname = socket.gethostname()
-    host_ip_address = socket.gethostbyname(this_hostname + ".local")
-    host_mac_address = str(hex(getnode())).strip("0x")
+    host = get_host_device()
+    print("Hostname is: " + host.hostname)
+    print("Host IP address is: " + str(host.ip_address))
+    print("Host MAC address is: " + host.mac_address + "\n")
 
-    print("Hostname is: " + this_hostname)
-    print("Host IP address is: " + host_ip_address)
-    print("Host MAC address is: " + host_mac_address)
-
-    print("Storing host information...\n")
-    host = NetworkDevice(this_hostname, host_ip_address, host_mac_address)
-    network_devices.append(host)
-
+    # Determine operating system and get the netmask from command line
     print("Initial discovery...")
     if sys.platform == "win32":
         print("Windows based host...")
-        netmask = get_netmask_windows()
+        print("Checking ipconfig for netmask...")
+        netmask = get_netmask_in_windows()
     if sys.platform == "linux" or sys.platform == "linux2":
         print("Linux based host...")
-        netmask = get_netmask_linux()
+        print("Checking ifconfig for netmask...")
+        netmask = get_netmask_in_linux()
     else:
         print("Unsupported platform... exiting")
         sys.exit()
 
     print("Netmask is: " + netmask + "\n")
-
-    print("Extrapolating additional information...")
-    cidr_suffix = 0
-    octets = netmask.split(".")
-    for octet in octets:
-        # We need to determine the number of bits that have a value of 1 in our IP address. We currently have
-        # a list of strings representing each octet, eg ["255", "255", "192", "0"]. We can easily convert each
-        # string to an integer, and each integer to binary using built in Python methods. Then, we can convert
-        # the binary representation back to a string and find the length of the string. Since a netmask is
-        # guaranteed to be an uninterrupted sequence of 1s, we can add the length string together to compute
-        # the CIDR suffix. When Python converts binary numbers to strings, it appends "0b" to the front for
-        # clarity, so this has to be stripped off when the conversion from binary to string is made.
-        cidr_suffix += len(str(bin(int(octet))).strip("0b"))
-
-    number_of_host_addresses = 2 ** (32 - cidr_suffix) - 2
+    netmask_suffix = determine_netmask_suffix(netmask)
+    number_of_host_addresses = 2 ** (32 - netmask_suffix) - 2
     print("Number of host addresses is: " + str(number_of_host_addresses))
 
-    network = ipaddress.ip_network((host_ip_address, cidr_suffix), strict=False)
+    # Use host IP address and netmask to allow ip_network object to compute network address, broadcast address, and all
+    # host addresses
+    network = ipaddress.ip_network((host.ip_address, netmask_suffix), strict=False)
     print("Network address is: " + str(network.network_address))
-
-    all_host_addresses = list(network.hosts())
+    all_host_addresses = list(network.hosts())  # Convert iterator object to list for ease of use
     print("First usable address is: " + str(all_host_addresses[0]))
     print("Last usable address is: " + str(all_host_addresses[number_of_host_addresses - 1]))
-
     print("Broadcast address is: " + str(network.broadcast_address) + "\n")
 
-    print("Pinging all addresses to populate ARP table...")
-    for address in all_host_addresses:
-        subprocess.Popen(["ping", "-c", "4", str(address)], stdout=subprocess.PIPE)
+    # Ping all IP addresses
+    print("Pinging all addresses to populate ARP table...\n")
+    ping_ip_addresses(all_host_addresses)
 
-    print("Loading regular expressions...")
-    re_ipv4 = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-    re_mac = re.compile(r"(?:[0-9a-fA-F]:?){12}")
+    # Check ARP table
+    print("Constructing device list from ARP table...\n")
+    network_devices = get_hosts_in_arp_table()  # Receive list of all devices in ARP table
+    network_devices.append(host)  # Append host machine to the list for completion
 
-    print("Checking the ARP table...")
-    process = subprocess.Popen(["arp"], stdout=subprocess.PIPE)
-    output = str(process.communicate())
-    table_entries = output.split("\\n")
-    for entry in table_entries:
-        if "ether" in entry:
+    # Lookup device manufacturer and print results
+    print("Looking up NIC vendors...")
+    for device in network_devices:
+        try:
+            device.vendor = mac.lookup(device.mac_address)
+        except mac_vendor_lookup.VendorNotFoundError:
+            pass
 
-            ip_address = ""
-            mac_address = ""
+        print(device.hostname + " | " + str(device.ip_address) + " | " + device.mac_address + " | " + device.vendor)
 
-            try:
-                ip_address = ipaddress.ip_address(re_ipv4.findall(entry)[0])
-            except IndexError:
-                pass
-
-            try:
-                mac_address = re_mac.findall(entry)[0].replace(":", "")
-            except IndexError:
-                pass
-
-            if ip_address and mac_address:
-                try:
-                    _, hostname, _ = socket.gethostbyaddr(str(ip_address))
-                except socket.herror:
-                    hostname = "unknown"
-
-                print("Found host " + hostname + " at IP address " + str(ip_address) + " with MAC address " + mac_address)
-                device = NetworkDevice(hostname, ip_address, mac_address)
-                network_devices.append(device)
+    return network_devices
 
 
-
-
-
-
-
-
-net_scan()
+network_scan()
