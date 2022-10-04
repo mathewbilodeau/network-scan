@@ -23,11 +23,15 @@ class NetworkDevice:
         except VendorNotFoundError:
             self.vendor = "unknown"
 
+    def __str__(self):
+        return self.hostname + " | " + str(self.ip_address) + " | " + self.mac_address + " | " + self.vendor
+
 
 def get_host_device():
     hostname = socket.gethostname()
     ip_address = socket.gethostbyname(hostname + ".local")
     mac_address = str(hex(getnode())).strip("0x")
+    mac_address = ':'.join(mac_address[i:i + 2] for i in range(0, 12, 2))  # format the MAC address
     return NetworkDevice(ip_address, mac_address, hostname)
 
 
@@ -98,7 +102,7 @@ def get_hosts_in_arp_table():
     for entry in table_entries:
         try:
             ip_address = ipaddress.ip_address(re_ipv4.findall(entry)[0])
-            mac_address = re_mac.findall(entry)[0].replace(":", "").replace("-", "")  # Filter : and - from address
+            mac_address = re_mac.findall(entry)[0].replace("-", ":")  # Replace - with : on Windows
             hostname = get_hostname_from_ip(str(ip_address))
             hosts.append(NetworkDevice(ip_address, mac_address, hostname))
         except IndexError:  # Index error occurs if regular expression did not find IP or mac address
@@ -164,7 +168,4 @@ def network_scan():
     for device in network_devices:
         print(device.hostname + " | " + str(device.ip_address) + " | " + device.mac_address + " | " + device.vendor)
 
-    return network_devices
-
-
-network_scan()
+    return network.network_address, network_devices

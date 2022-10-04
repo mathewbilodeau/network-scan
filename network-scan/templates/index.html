@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles/main.css') }}">
+    <title>Network Scan</title>
+</head>
+<body>
+    <table>
+        <caption>Devices on network {{address}}</caption>
+        <thead>
+            <td class="header-highlight">Hostname</td>
+            <td class="header-highlight">IP Address</td>
+            <td class="header-highlight">MAC Address</td>
+            <td class="header-highlight">Vendor</td>
+        </thead>
+        <tbody>
+        {% for device in network %}
+        <tr>
+            <td class="entry-highlight">{{device.hostname}}</td>
+            <td class="entry-highlight">{{device.ip_address}}</td>
+            <td class="entry-highlight">{{device.mac_address}}</td>
+            <td class="entry-highlight">{{device.vendor}}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
