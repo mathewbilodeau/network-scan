@@ -5,15 +5,23 @@ import subprocess
 import sys
 from uuid import getnode
 
-import mac_vendor_lookup
+from mac_vendor_lookup import MacLookup, VendorNotFoundError
 
 
 class NetworkDevice:
-    def __init__(self, ip_address: ipaddress, mac_address, hostname="could not be found", vendor="unknown"):
+    print("Updating MAC address OUI database...\n")
+    vendor_data = MacLookup()
+    vendor_data.update_vendors()
+
+    def __init__(self, ip_address: ipaddress, mac_address, hostname):
         self.ip_address = ip_address
         self.mac_address = mac_address
         self.hostname = hostname
-        self.vendor = vendor
+
+        try:
+            self.vendor = NetworkDevice.vendor_data.lookup(mac_address)
+        except VendorNotFoundError:
+            self.vendor = "unknown"
 
 
 def get_host_device():
@@ -65,6 +73,13 @@ def ping_ip_addresses(list_of_ip_addresses: list):
         subprocess.Popen(["ping", "-c", "1", str(ip_address)], stdout=subprocess.PIPE)
 
 
+def get_hostname_from_ip(ip_address: str):
+    try:
+        return socket.gethostbyaddr(ip_address)[1]
+    except socket.herror:
+        return "unknown"
+
+
 def get_hosts_in_arp_table():
     # List of all hosts in ARP table
     hosts = []
@@ -84,18 +99,22 @@ def get_hosts_in_arp_table():
         try:
             ip_address = ipaddress.ip_address(re_ipv4.findall(entry)[0])
             mac_address = re_mac.findall(entry)[0].replace(":", "").replace("-", "")  # Filter : and - from address
-            hosts.append(NetworkDevice(ip_address, mac_address))
+            hostname = get_hostname_from_ip(str(ip_address))
+            hosts.append(NetworkDevice(ip_address, mac_address, hostname))
         except IndexError:  # Index error occurs if regular expression did not find IP or mac address
             pass
 
     return hosts
 
 
-def network_scan():
-    print("Updating MAC address OUI database...\n")
-    mac = mac_vendor_lookup.MacLookup()
-    mac.update_vendors()
+def get_device_vendor(mac_data: MacLookup, mac_address: str):
+    try:
+        return mac_data.lookup(mac_address)
+    except VendorNotFoundError:
+        return "unknown"
 
+
+def network_scan():
     # Get host information
     print("Getting host information...")
     host = get_host_device()
@@ -141,13 +160,8 @@ def network_scan():
     network_devices.append(host)  # Append host machine to the list for completion
 
     # Lookup device manufacturer and print results
-    print("Looking up NIC vendors...")
+    print("Printing contents...")
     for device in network_devices:
-        try:
-            device.vendor = mac.lookup(device.mac_address)
-        except mac_vendor_lookup.VendorNotFoundError:
-            pass
-
         print(device.hostname + " | " + str(device.ip_address) + " | " + device.mac_address + " | " + device.vendor)
 
     return network_devices
