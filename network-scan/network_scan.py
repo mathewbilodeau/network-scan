@@ -53,7 +53,7 @@ def get_netmask_in_windows():
     # To obtain the netmask, we will run the ipconfig command and extract it from the output.
     process = subprocess.Popen("ipconfig", stdout=subprocess.PIPE)
     output = str(process.communicate()).replace("\\n", "")
-    netmask = output.split("netmask ")[1].split(" ")[0]
+    netmask = output.split("Subnet Mask . . . . . . . . . . . . : ")[5].split(" ")[0]
     return netmask
 
 
