@@ -132,7 +132,7 @@ def network_scan():
         print("Windows based host...")
         print("Checking ipconfig for netmask...")
         netmask = get_netmask_in_windows()
-    if sys.platform == "linux" or sys.platform == "linux2":
+    elif sys.platform == "linux" or sys.platform == "linux2":
         print("Linux based host...")
         print("Checking ifconfig for netmask...")
         netmask = get_netmask_in_linux()
