@@ -24,7 +24,7 @@ class NetworkDevice:
             self.vendor = "unknown"
 
     def __str__(self):
-        return self.hostname + " | " + str(self.ip_address) + " | " + self.mac_address + " | " + self.vendor
+        return str(self.ip_address)
 
 
 def get_host_device():
@@ -73,7 +73,7 @@ def get_hostname_from_ip(ip_address: str):
     try:
         return socket.gethostbyaddr(ip_address)[1]
     except socket.herror:
-        return "unknown"
+        return ip_address
 
 
 def get_hosts_in_arp_table():
@@ -152,6 +152,6 @@ def network_scan():
     # Lookup device manufacturer and print results
     print("Printing contents...")
     for device in network_devices:
-        print(device.hostname + " | " + str(device.ip_address) + " | " + device.mac_address + " | " + device.vendor)
+        print(str(device))
 
     return network.network_address, network_devices

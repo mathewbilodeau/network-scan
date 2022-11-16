@@ -27,3 +27,8 @@ th, td {
 .entry-highlight {
     background-color: #f5f5dc;
 }
+
+.center {
+  margin-left: auto;
+  margin-right: auto;
+}
