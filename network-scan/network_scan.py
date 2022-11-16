@@ -35,7 +35,7 @@ def get_host_device():
     return NetworkDevice(ip_address, mac_address, hostname)
 
 
-def get_netmask_in_linux():
+def get_netmask():
     # To obtain the netmask, we will run the ifconfig command and extract it from the output.
     process = subprocess.Popen("ifconfig", stdout=subprocess.PIPE)
     output = str(process.communicate()).replace("\\n", "")
@@ -46,14 +46,6 @@ def get_netmask_in_linux():
     # dis-join the host IP from the remainder of the string, so we also split this list into another list of two
     # elements at the first " ". We can then assign our netmask variable to the first element of the resulting list.
     netmask = output.split("netmask ")[1].split(" ")[0]
-    return netmask
-
-
-def get_netmask_in_windows():
-    # To obtain the netmask, we will run the ipconfig command and extract it from the output.
-    process = subprocess.Popen("ipconfig", stdout=subprocess.PIPE)
-    output = str(process.communicate()).replace("\\n", "")
-    netmask = output.split("Subnet Mask . . . . . . . . . . . . : ")[5].split(" ")[0]
     return netmask
 
 
@@ -85,16 +77,14 @@ def get_hostname_from_ip(ip_address: str):
 
 
 def get_hosts_in_arp_table():
-    # List of all hosts in ARP table
+    # List of all hosts in ARP table.
     hosts = []
 
-    # We'll use regular expressions to filter the IP and mac addresses out of the ARP table. Important to note that in
-    # Windows, the arp command formats mac addresses with a "-" separating each group, whereas in Linux they are
-    # formatted with a ":". This regular expression accounts for that with "[:|-]".
+    # We'll use regular expressions to filter the IP and mac addresses out of the ARP table.
     re_ipv4 = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
     re_mac = re.compile(r"(?:[0-9a-fA-F][:|-]?){12}")
 
-    # Run ARP command - this method is cross-platform due to similarities between Windows and Linux arp command.
+    # Run ARP command.
     process = subprocess.Popen("arp", stdout=subprocess.PIPE)
     table_entries = str(process.communicate()).split("\\n")  # Isolate ARP table entries by splitting at new line
 
@@ -128,14 +118,10 @@ def network_scan():
 
     # Determine operating system and get the netmask from command line
     print("Initial discovery...")
-    if sys.platform == "win32":
-        print("Windows based host...")
-        print("Checking ipconfig for netmask...")
-        netmask = get_netmask_in_windows()
-    elif sys.platform == "linux" or sys.platform == "linux2":
+    if sys.platform == "linux" or sys.platform == "linux2":
         print("Linux based host...")
         print("Checking ifconfig for netmask...")
-        netmask = get_netmask_in_linux()
+        netmask = get_netmask()
     else:
         print("Unsupported platform... exiting")
         sys.exit()
